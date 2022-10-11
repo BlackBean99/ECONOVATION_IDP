@@ -4,10 +4,12 @@ import com.swagger.docs.global.common.redis.RedisService;
 import com.swagger.docs.sevice.UserService;
 import io.jsonwebtoken.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -18,8 +20,9 @@ import java.util.Date;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtProvider {
-    private final UserService customAccountDetailsService;
+    private final UserDetailsService customAccountDetailsService;
     private final RedisService redisService;
     @Value("${spring.jwt.secret-key}")
     private String secretKey;
@@ -34,14 +37,17 @@ public class JwtProvider {
         secretKey = Base64.getEncoder().encodeToString(secretKey.getBytes());
     }
 
-    public void logout(String userId, String accessToken) {
-        long expiredAccessTokenTime = getExpiredTime(accessToken).getTime() - new Date().getTime();
-        redisService.setValues(blackListATPrefix + accessToken, userId, Duration.ofMillis(expiredAccessTokenTime));
-        redisService.deleteValues(userId); // Delete RefreshToken In Redis
+    public void logout(String refreshToken) {
+        long expiredAccessTokenTime = getExpiredTime(refreshToken).getTime() - new Date().getTime();
+//        이메일 조회
+//        accessToken To userEmail
+        String userEmail = getUserEmail(refreshToken);
+        redisService.setValues(blackListATPrefix + refreshToken, userEmail, Duration.ofMillis(expiredAccessTokenTime));
+        redisService.deleteValues(userEmail); // Delete RefreshToken In Redis
     }
 
-    private String createToken(String userId, String role, long tokenInvalidTime) {
-        Claims claims = Jwts.claims().setSubject(userId);
+    private String createToken(String userEmail, String role, long tokenInvalidTime) {
+        Claims claims = Jwts.claims().setSubject(userEmail);
         claims.put("roles", role);
         Date date = new Date();
         return Jwts.builder()
@@ -52,12 +58,12 @@ public class JwtProvider {
                 .compact();
     }
 
-
 // accessToken 은 redis에 저장하지 않는다.
     public String createAccessToken(String userId, String role) {
         long tokenInvalidTime = 1000L * 60 * 3;//3m
         return this.createToken(userId, role, tokenInvalidTime);
     }
+
 // refreshToken 은 redis 에 저장해야한다.
     public String createRefreshToken(String userId, String role) {
         Long tokenInvalidTime = 1000L * 60 * 60 * 24; // 1d
@@ -66,12 +72,16 @@ public class JwtProvider {
         return refreshToken;
     }
 
-
     private String getUserEmail(String token) {
         return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().getSubject();
     }
+
     private Date getExpiredTime(String token) {
-        return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().getExpiration();
+        try {
+            return ((Claims)Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody()).getExpiration();
+        }catch (Exception e) {
+            return null;
+        }
     }
 
     public Authentication validateToken(HttpServletRequest request, String token) {
