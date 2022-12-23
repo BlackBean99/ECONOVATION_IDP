@@ -30,9 +30,6 @@ public class AccountController {
     private final AccountJwtService accountJwtService;
     private final AccountSignUpService accountSignUpService;
 
-    @Value("${login.redirect_url}")
-    private String loginPageUrl;
-
     //    로그아웃 기능 구현
     @Operation(summary = "logout", description = "로그아웃_에이전트, 로그아웃시 redirect 페이지로 이동")
     @ApiResponses({
@@ -75,6 +72,18 @@ public class AccountController {
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
+    //  회원가입 기능 구현
+    @Operation(summary = "이메일 중복 확인", description = "회원 가입시 이메일 중복 확인")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "HttpStatus.ACCEPTED", description = "CREATED")
+    })
+    @PostMapping("/api/account/sign-up")
+    public ResponseEntity<BasicResponse> signUp(String userEmail) {
+        accountSignUpService.isDuplicateEmail(userEmail);
+        BasicResponse response = new BasicResponse("유효한 이메일입니다.", HttpStatus.ACCEPTED);
+        return new ResponseEntity<>(response, HttpStatus.ACCEPTED);
+    }
+
     // 로그인 기능 구현
     @Operation(summary = "로그인 Agent URL 이동", description = "로그인 페이지로 이동")
     @ApiResponses({
@@ -82,7 +91,7 @@ public class AccountController {
     })
     @PostMapping("/api/account/login")
     public ResponseEntity<Model> login(String requestUrl, Model model) throws URISyntaxException {
-        URI redirectUri = new URI(loginPageUrl);
+        URI redirectUri = new URI(requestUrl);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.setLocation(redirectUri);
         model.addAttribute("requestUrl", requestUrl);
